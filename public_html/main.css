@@ -1,0 +1,21 @@
+/* 
+    Created on : 09-Feb-2015, 11:17:43
+    Author     : Sam Hall
+*/
+
+body{ background-color: white; }
+
+.matrixCanvas{
+    position:absolute; top:0px; left:0px;
+}
+
+.compCanv{
+    position:absolute; top:0px; left:0px;
+    visibility: hidden;
+}
+
+#buttonContainer {
+    position: fixed;
+    bottom: 10px;
+    width: 100%;
+}
