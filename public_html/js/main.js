@@ -9,7 +9,7 @@ var codeLines = [];
 var ctx = bottomCanvas.getContext('2d');
 var topCtx = topCanvas.getContext('2d');
 
-var codeColumnWidth = 20;
+var codeColumnWidth = 40;
 var codeRowWidth = 20;
 var codeRowOverflow = 40;
 
@@ -18,13 +18,24 @@ var canvasHeight = 800;
 
 var infectionRadius = 10;
 
-var isSaveToDiskActive = false;
+var isSaveToDiskActive = true;
 
-var dataIn = [];
-var dataOut = [];
-var codeMaxSpeed;
-var codeMinSpeed;
-var codeSlowestUpdateInterval = 100;
+var dataType = [];
+var data = [];
+var badData = [];
+var badDataType = [];
+var dataColumn = [];
+var currentDataIndex = [];
+var lineSpeeds = [];
+var lineLastUpdates = [];
+
+var codeMaxSpeed = 1;
+var codeMinSpeed = 1;
+var codeSlowestUpdateInterval = 20;
+var maxCodeLinesPerType = 50;
+var badLineFrequency = 10;
+var badLineFrequencyRandom = 0;
+var timeSinceLastBadLine = [];
 
 function init() {
     topCanvas.width = canvasWidth;
@@ -37,46 +48,47 @@ function init() {
     ctx.fillStyle = 'rgba(0,0,0,1)';
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
     
-    //add inbound data
-    //normalise data
-    dataIn.sort(function(a, b) {
-                    return b - a;
-                  });
-    codeMaxSpeed = dataIn[0];
-    codeMinSpeed = dataIn[dataIn.length - 1]; 
-    
-    //add codelines
-    for(var i in dataIn) {
-        addMatrixCodeLine(i, 0, (dataIn[i] - codeMinSpeed) / (codeMaxSpeed - codeMinSpeed), false );
+    //find data speed limits
+    for(var i in data) {
+        if(data[i].length > codeMaxSpeed) codeMaxSpeed = data[i].length;
+        
+        else if(data[i].length < codeMinSpeed) codeMinSpeed = data[i].length;
     }
     
-    //add outbound data
-    //normalise data
-    
-    dataOut.sort(function(a, b) {
-                    return b - a;
-                  });
-    codeMaxSpeed = Math.max(dataOut[0], codeMaxSpeed);
-    codeMinSpeed = Math.min(dataOut[dataOut.length - 1], codeMinSpeed); 
-    
     //add codelines
-    for(var i in dataOut) {
-        addMatrixCodeLine(i, topCanvas.height / codeRowWidth, (dataOut[i] - codeMinSpeed) / (codeMaxSpeed - codeMinSpeed), true );
+    for(var i in data) {
+        var x = Math.round(Math.random() * topCanvas.width / codeColumnWidth);
+        
+        while(dataColumn.indexOf(x) !== -1) {
+            x = Math.round(Math.random() * topCanvas.width / codeColumnWidth);
+        }
+        
+//        var x = i;
+        currentDataIndex.push(0);
+        lineSpeeds.push(Math.round((1.0 - getDataSpeed(data[i].length) ) * codeSlowestUpdateInterval + 1));
+        lineLastUpdates.push(0);
+        dataColumn.push(x);
+
+        addMatrixCodeLine(dataType[i], x);
     }
 }
 
 function draw() {
-    ctx.fillStyle = 'rgba(0,0,0,.05)';
+    ctx.fillStyle = 'rgba(0,0,0,.03)';
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
     ctx.fillStyle = '#FFF';
-    ctx.font = topCtx.font = '10pt Georgia';
+    ctx.font = topCtx.font = '14pt Georgia';
     
     //Wipe top canvas white letters
     topCtx.clearRect(0,0,canvasWidth,canvasHeight);
 
     for(var i in codeLines) {
        codeLines[i].draw();
+       lineLastUpdates[i]++;
     }
+    
+    //check if blank space available to add new line
+    addNewLineIfRoom();
     
     if(isSaveToDiskActive) {
         var compCtx = compCanvas.getContext('2d');
@@ -86,32 +98,77 @@ function draw() {
     }
 }
 
-function getDistBetweenCodeLines( line ) {
+function addNewLineIfRoom() {
     
-    var xPos = codeLinesX[line];
-    var yPos = codeLinesY[line];
-    
-    var firstIndex = codeLinesX.indexOf(xPos - infectionRadius);
-    var lastIndex = codeLinesX.lastIndexOf(xPos + infectionRadius);
-    
-    
-    for(var i = firstIndex;i < lastIndex;i++) {
-        
-        if(Math.abs(codeLinesY[i] - yPos) < infectionRadius) {
-            console.log("infected new line: " + i);
-            codeLineInfected = true;
+    for(var i in dataType) {
+        if(lineLastUpdates[i] > lineSpeeds[i] * 9) {
+            lineLastUpdates[i] = 0;
+            addMatrixCodeLine(dataType[i], dataColumn[i]);
         }
     }
 }
 
-function addMatrixCodeLine(x, y, speed, outboundData) {
+function addMatrixCodeLine(name, x) {
+    
+    var badIndex = badDataType.indexOf(name);
+    //add bad line if time
+    if(badIndex !== -1) {
+        
+        if(timeSinceLastBadLine[badIndex] > badLineFrequency + badLineFrequencyRandom * Math.random()) {
+            addBadMatrixCodeLine(name);
+        
+            timeSinceLastBadLine[badIndex] = 0;
+
+            return;
+        }
+        
+        timeSinceLastBadLine[badIndex]++;
+    }
+    
+    
+    ////////////////////////
+    
+    var typeIndex = dataType.indexOf(name);
+    
+    if(currentDataIndex[ typeIndex ] > data[typeIndex].length - 1) currentDataIndex[ typeIndex ] = 0;
+    
+    var lineIndex = currentDataIndex[ typeIndex ];
+    var dataPiece = data[typeIndex][lineIndex];
     
     var xPos = Math.round(x);
-    var yPos = Math.round(y);
+    var yPos = dataPiece[2] === "DOWN" ? 0 : topCanvas.height / codeRowWidth;
     
-    var line = new codeLine(xPos, yPos, speed, outboundData);
+    var line = new codeLine(xPos, yPos, name, getDataSpeed(data[typeIndex].length), dataPiece[0], dataPiece[1] * 1.5, dataPiece[2], dataPiece[3] );
     
     codeLines.push( line );
+    
+    currentDataIndex[ typeIndex ]++;
+}
+
+function addBadMatrixCodeLine(name) {
+    
+    var i = badDataType.indexOf(name);
+    
+    var dataPiece = badData[i];
+    var typeIndex = dataType.indexOf(badDataType[i]);
+    var x = dataColumn[typeIndex];
+    
+    var xPos = Math.round(x);
+    var yPos = dataPiece[2] === "DOWN" ? 0 : topCanvas.height / codeRowWidth;
+    
+    var line = new codeLine(xPos, yPos, name, getDataSpeed(data[typeIndex].length), dataPiece[0], dataPiece[1] * 1.5, dataPiece[2], dataPiece[3] );
+    
+    codeLines.push( line );
+}
+
+function getDataSpeed(length) {
+    return clamp( normalise(length, codeMinSpeed, codeMaxSpeed), 0, 1.0);
+}
+
+function removeLine(line) {
+    var index = codeLines.indexOf(line);
+    
+    codeLines.splice(index, 1);
 }
 
 function addRandomMatrixCodeLines() {
@@ -131,6 +188,14 @@ function StopMatrix()
     clearInterval(Game_Interval);
 }
 
+function normalise(x, min, max) {
+    return (x - min) / (max - min);
+}
+
+function clamp(x, min, max) {
+    return Math.max(Math.min(x, max), min);
+}
+
 $( document ).ready(function() {
     loadContentData( function() {
         init();
@@ -144,6 +209,9 @@ $("button#pause").click(function () {
 });
 $("button#play").click(function () {
     RunMatrix();
+});
+$("button#nextFrame").click(function () {
+    draw();
 });
 $("button#addCodeLines").click(function () {
     addRandomMatrixCodeLines();
